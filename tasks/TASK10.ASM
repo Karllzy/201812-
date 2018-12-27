@@ -2,7 +2,6 @@
     LJMP START
     ORG 000BH
     LJMP T0INT
-
 ;-----------------------------------------
 ;定义一些IO口
     LED1 EQU P1.0
@@ -23,6 +22,7 @@
     T0COUNTH EQU 0EEH
     T0COUNTL EQU 00H        ;定时器0的常量延时位5ms(0.005S)
     T1COUNT EQU 0F6H
+    secondT EQU 200
     ScreenWaitT EQU 60      ;屏幕刷新周期，可在0~255中选择（1最小1x5ms，0最大256x5ms）
     LEDWaitT EQU 30         ;LED刷新周期，可在0~255中选择（1最小1x5ms，0最大256x5ms）
 ;------------------------------------------
@@ -31,6 +31,8 @@
     SHUMA2 EQU 16H  ;数码管2号
     UPT EQU 15H     ;屏幕刷新周期
     LEDT EQU 14H    ;LED亮灭的周期
+    SecondControl EQU 13H   ;秒控制寄存器
+    Timer   EQU     12H     ;计时用的字节
     ;位们
     ScreenState BIT 00H ;屏幕亮灭状态
     SHAN1   BIT 01H     ;数码管1是否闪烁
@@ -39,12 +41,20 @@
 START:
     MOV SHUMA1, #0
     MOV SHUMA2, #0
-    MOV UPT, #ScreenWaitT
-    MOV LEDT, #LEDWaitT
+
+    MOV UPT, #ScreenWaitT ;初始化屏幕周期
+    MOV LEDT, #LEDWaitT   ;初始化LED周期
+
     LCALL InitTimer0    ;开启定时器0
-    CLR ScreenState
-    SETB SHAN1          ;尝试着让数码管1闪动
-    CLR SHAN2
+
+    CLR ScreenState     ;关闭屏幕周期
+    SETB SHAN1          ;让数码管1闪动
+    CLR SHAN2           ;让数码管2不闪动
+
+    SETB ClockBus       ;屏幕时钟线拉高
+    SETB DataBus        ;屏幕数据线拉高
+
+
     MAIN:
     JNB BUTTON1, K1
     JNB BUTTON2, K2
@@ -82,7 +92,11 @@ k1:
         JB  BUTTON1, MAIN            
     LOPK1:JNB BUTTON1, LOPK1
         SETB LED2    
-
+        MOV A, SHUMA1
+        MOV B, #10
+        MUL AB
+        ADD A, SHUMA2
+        LCALL RunTimer
         LJMP MAIN
 ;-------------------------------------
 
@@ -168,6 +182,40 @@ k4:
         LJMP MAIN
 ;------------------------------------
 
+;------------------------------------
+;用于倒计时的函数
+;输入:倒计时的总量-->A
+;输出：None
+;-------------------------------------
+RunTimer:
+    PUSH A
+    nextNum:
+    LCALL UPDATE_SPEC
+    LCALL DELAY1S
+    DJNZ A, nextNum
+    LCALL DELAY1S
+    LCALL UPDATE_SPEC
+    POP A 
+    RET
+;------------------------------------
+
+;-------------------------------------
+; 特殊的屏幕刷新函数用于两个数码管的显示控制
+;输入：需要显示的0~100间的数字放入ACC
+;输出: NONE
+;-------------------------------------
+UPDATE_SPEC:
+    push ACC
+
+    MOV B, #10
+    DIV AB
+    LCALL DISPLAY
+    MOV A, B
+    LCALL DISPLAY
+
+    POP ACC
+    RET
+;-------------------------------------
 
 ;------------------------------------
 ; UPDATE函数用于刷新屏幕状态
@@ -178,26 +226,20 @@ UPDATE:
         PUSH ACC
 
         CPL ScreenState
-        JNB ScreenState, ALLLIGHT
-        JB SHAN1, SHANDONG1
-        JNB SHAN2, ALLLIGHT
+
         MOV A, SHUMA1
-        LCALL DISPLAY
+        JB ScreenState, notshan1
+        JNB SHAN1, notshan1
         MOV A, #0AH 
-        LCALL SHUMA2
-        JMP OVERUPDATE
-    SHANDONG1:
+    notshan1:
+        LCALL DISPLAY
+
+        MOV A, SHUMA2
+        JB ScreenState, notShan2
+        JNB SHAN2, notShan2
         MOV A, #0AH
-        LCALL SHUMA1
-        MOV A, SHUMA2
-        LCALL DISPLAY
-        JMP OVERUPDATE
-    ALLLIGHT:
-        MOV A, SHUMA1
-        LCALL DISPLAY
-        MOV A, SHUMA2
-        LCALL DISPLAY
-    OVERUPDATE:
+    notShan2:
+        LCALL DISPLAY 
 
         POP ACC
         RET 
@@ -254,6 +296,30 @@ DELAY10MS:
         POP 05H
         POP 06H
         POP 07H
+        RET
+;-------------------------------------
+
+
+;-------------------------------------
+;延时1秒@11.0592MHz
+;-------------------------------------
+DELAY1S:			
+        NOP
+        NOP
+        NOP
+        PUSH 30H
+        PUSH 31H
+        PUSH 32H
+        MOV 30H,#34
+        MOV 31H,#159
+        MOV 32H,#56
+    delay1NEXT:
+        DJNZ 32H,delay1NEXT
+        DJNZ 31H,delay1NEXT
+        DJNZ 30H,delay1NEXT
+        POP 32H
+        POP 31H
+        POP 30H
         RET
 ;-------------------------------------
 

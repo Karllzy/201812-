@@ -48,7 +48,7 @@ START:
     LCALL InitTimer0    ;开启定时器0
 
     CLR ScreenState     ;关闭屏幕周期
-    SETB SHAN1          ;让数码管1闪动
+    CLR SHAN1           ;让数码管1不闪动
     CLR SHAN2           ;让数码管2不闪动
 
     SETB ClockBus       ;屏幕时钟线拉高
@@ -61,6 +61,9 @@ START:
     JNB BUTTON3, K3
     JNB BUTTON4, K4   
     AJMP MAIN
+k4: 
+    LJMP k4func
+;----------------------------------------
 
 ;----------------------------------------
 T0INT:
@@ -84,7 +87,7 @@ T0INT:
 
 
 ;-------------------------------------
-;S键设定功能
+;运行倒计时
 ;-------------------------------------
 k1:
         CLR LED2                   
@@ -97,12 +100,13 @@ k1:
         MUL AB
         ADD A, SHUMA2
         LCALL RunTimer
+    OVERK1:
         LJMP MAIN
 ;-------------------------------------
 
 
 ;-------------------------------------
-;R键，运行功能
+;设定完成
 ;--------------------------------------
 k2:
         CLR LED3                   
@@ -110,8 +114,14 @@ k2:
         JB  BUTTON2, MAIN            
     LOPK2:JNB BUTTON2, LOPK2
         SETB LED3   
-        
-
+        JB SHAN1, SETOK
+        JB SHAN2, SETOK
+        CLR SHAN1
+        SETB SHAN2
+        JMP OVERK1  
+    SETOK:
+        CLR SHAN1 
+        CLR SHAN2 
         LJMP MAIN
 ;-------------------------------------
 
@@ -139,7 +149,7 @@ k3:
     
     moveToJingTai:
         CLR SHAN1
-        CLR SHAN2
+        SETB SHAN2
         
     OVERK3:
         LCALL UPDATE
@@ -150,11 +160,11 @@ k3:
 ;------------------------------------
 ;上移键↑，将设定值增加1
 ;-------------------------------------
-k4:
+k4func:
         PUSH ACC
         CLR LED3                   
         LCALL DELAY10MS
-        JB  BUTTON4, MAIN            
+        JB  BUTTON4, OVERK4            
     LOPK4:JNB BUTTON4, LOPK4
         SETB LED3    
         JB SHAN1, modify1
@@ -188,15 +198,24 @@ k4:
 ;输出：None
 ;-------------------------------------
 RunTimer:
-    PUSH A
-    nextNum:
-    LCALL UPDATE_SPEC
-    LCALL DELAY1S
-    DJNZ A, nextNum
-    LCALL DELAY1S
-    LCALL UPDATE_SPEC
-    POP A 
-    RET
+        JZ OverRunTimer
+        MOV Timer, A 
+        CLR LED1 
+        CLR ET0
+        nextNum:
+        MOV A, Timer
+        LCALL UPDATE_SPEC
+        LCALL DELAY1S
+        DJNZ Timer, nextNum
+        CLR BEEF
+        MOV A, Timer
+        LCALL UPDATE_SPEC
+        CLR BEEF
+        LCALL DELAY1S
+        SETB ET0
+        SETB BEEF
+    OverRunTimer:
+        RET
 ;------------------------------------
 
 ;-------------------------------------
